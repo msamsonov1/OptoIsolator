@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OptoIsolator: Deep-Space Avionics Radiation Dark-Current Tracker</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- MathJax v3 Configuration -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #05070d;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .formula-box {
+      background-color: #030712;
+      border: 1px solid #1f2937;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      margin: 0.65rem 0;
+      text-align: center;
+      color: #67e8f9;
+      font-size: 0.925rem;
+      overflow-x: auto;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+
+    .glow-cyan {
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.25);
+    }
+    .glow-rose {
+      box-shadow: 0 0 15px rgba(244, 63, 94, 0.35);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-cyan-500/30 selection:text-cyan-200">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-gray-800/80 bg-gray-950/80 backdrop-blur sticky top-0 z-50 px-4 lg:px-8 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-cyan-950/80 border border-cyan-500/40 rounded-lg text-cyan-400">
+          <i data-lucide="shield-alert" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-xs uppercase font-mono tracking-widest px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60">NASA SBIR/STTR Subtopic Z2.01</span>
+            <span class="text-xs font-mono text-gray-400">TRL-4 to TRL-6</span>
+          </div>
+          <h1 class="text-lg lg:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            OptoIsolator <span class="text-xs font-normal text-gray-400">| Deep-Space Avionics Radiation Dark-Current Tracker</span>
+          </h1>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex items-center bg-gray-900/90 p-1 rounded-xl border border-gray-800 text-sm font-medium">
+        <button id="tabBtnSim" onclick="switchTab('sim')" class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-cyan-400 bg-gray-800 shadow-sm transition">
+          <i data-lucide="activity" class="w-4 h-4"></i>
+          <span>Live Telemetry & Sim</span>
+        </button>
+        <button id="tabBtnPhysics" onclick="switchTab('physics')" class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-white transition">
+          <i data-lucide="atom" class="w-4 h-4"></i>
+          <span>Core Physics & Theory</span>
+        </button>
+        <button id="tabBtnProposal" onclick="switchTab('proposal')" class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-white transition">
+          <i data-lucide="file-check-2" class="w-4 h-4"></i>
+          <span>$225k NASA Proposal</span>
+        </button>
+        <button id="tabBtnARR" onclick="switchTab('arr')" class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-white transition">
+          <i data-lucide="trending-up" class="w-4 h-4"></i>
+          <span>Commercial ARR ($245M)</span>
+        </button>
+      </nav>
+
+      <!-- System Health Indicator -->
+      <div class="hidden sm:flex items-center space-x-4 font-mono text-xs">
+        <div class="text-right">
+          <div class="text-gray-400">FLIGHT CONTROLLER BUS</div>
+          <div id="telemetryBusStatus" class="text-emerald-400 font-semibold flex items-center justify-end gap-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> NOMINAL PRIMARY ISOLATION
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main View Container -->
+  <main class="flex-grow max-w-7xl w-full mx-auto p-4 lg:p-6 space-y-6">
+
+    <!-- ============================================================== -->
+    <!-- TAB 1: LIVE SIMULATION & TELEMETRY HUD                         -->
+    <!-- ============================================================== -->
+    <div id="viewSim" class="space-y-6">
+      <!-- Quick Status Ticker Banner -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono">
+        <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-3">
+          <span class="text-xs text-gray-400">CUMULATIVE TID (Jovian)</span>
+          <div id="statTID" class="text-xl font-bold text-cyan-400">142.4 krad(Si)</div>
+          <span class="text-[10px] text-gray-500">Trapped Electron/Proton Flux</span>
+        </div>
+        <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-3">
+          <span class="text-xs text-gray-400">OPTICAL TRANSMISSION ($\tau$)</span>
+          <div id="statDome" class="text-xl font-bold text-emerald-400">91.2 %</div>
+          <span class="text-[10px] text-gray-500">Silicone Matrix Yellowing</span>
+        </div>
+        <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-3">
+          <span class="text-xs text-gray-400">DARK-CURRENT LEAKAGE ($I_d$)</span>
+          <div id="statDarkCurrent" class="text-xl font-bold text-amber-400">14.8 nA</div>
+          <span class="text-[10px] text-gray-500">Sub-threshold Baseline Shift</span>
+        </div>
+        <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-3">
+          <span class="text-xs text-gray-400">BARRIER CHANNEL SELECT</span>
+          <div id="statActiveChannel" class="text-xl font-bold text-cyan-300">CH-A: OPTO (Primary)</div>
+          <span id="statChannelSubtext" class="text-[10px] text-emerald-500">Normal High-V Isolation</span>
+        </div>
+      </div>
+
+      <!-- Main Interactive Row: Dynamic Physics Canvas + Diagnostic Phase-Space -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Physical Device & Radiation Canvas (7 Cols) -->
+        <div class="lg:col-span-7 bg-gray-950/70 border border-gray-800 rounded-2xl p-4 flex flex-col justify-between">
+          <div class="flex items-center justify-between pb-3 border-b border-gray-800/80">
+            <div class="flex items-center gap-2">
+              <i data-lucide="cpu" class="w-4 h-4 text-cyan-400"></i>
+              <h2 class="text-sm font-semibold tracking-wide text-white uppercase">Optocoupler Degradation & Silicon Barrier Core</h2>
+            </div>
+            <div class="flex items-center gap-2 font-mono text-xs">
+              <span class="px-2 py-0.5 rounded bg-cyan-950/70 border border-cyan-800/60 text-cyan-300">Europa Radiation Belt Orbit</span>
+              <span id="canvasFpsBadge" class="text-gray-500">60 FPS</span>
+            </div>
+          </div>
+
+          <!-- Canvas Element -->
+          <div class="relative w-full aspect-[16/9] my-3 bg-[#03050a] rounded-xl overflow-hidden border border-gray-900">
+            <canvas id="simCanvas" class="w-full h-full block"></canvas>
+            <!-- Overlay Warnings -->
+            <div id="failoverOverlay" class="hidden absolute inset-0 bg-red-950/40 backdrop-blur-xs border-2 border-red-500/80 rounded-xl flex items-center justify-center p-6 transition-all duration-300">
+              <div class="text-center bg-gray-950/90 border border-rose-500/60 p-5 rounded-2xl shadow-2xl max-w-sm">
+                <i data-lucide="alert-triangle" class="w-10 h-10 text-rose-400 mx-auto mb-2 animate-bounce"></i>
+                <div class="text-rose-300 font-bold text-sm tracking-widest font-mono">AUTONOMOUS FAILOVER TRIP</div>
+                <p class="text-xs text-gray-300 mt-1">CTR degraded below 18.5%. Output pull-up resistance ($R$) collapsed. Isolation switch fired to capacitive backup array.</p>
+                <div class="mt-3 text-[11px] font-mono text-emerald-400 bg-emerald-950/50 py-1 px-2 rounded border border-emerald-800">
+                  REDUNDANT DIGITAL ISOLATOR ENGAGED
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Canvas Context Footnote -->
+          <div class="flex items-center justify-between text-xs text-gray-400 pt-2 font-mono">
+            <div class="flex items-center gap-3">
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block"></span> GaAs LED Emitted Photons</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Jovian Ionizing Radiation</span>
+            </div>
+            <span class="text-[11px] text-gray-500">HV Primary: 400V Batt Logic Barrier</span>
+          </div>
+        </div>
+
+        <!-- Diagnostic Phase Space Plot: Duty Cycle (D) vs Pull-Up Resistance (R) (5 Cols) -->
+        <div class="lg:col-span-5 bg-gray-950/70 border border-gray-800 rounded-2xl p-4 flex flex-col justify-between">
+          <div class="flex items-center justify-between pb-3 border-b border-gray-800/80">
+            <div class="flex items-center gap-2">
+              <i data-lucide="scatter-chart" class="w-4 h-4 text-cyan-400"></i>
+              <h2 class="text-sm font-semibold tracking-wide text-white uppercase">Phase-Space: Duty Cycle ($D$) vs. Resistance ($R$)</h2>
+            </div>
+            <span class="font-mono text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Startup Self-Test</span>
+          </div>
+
+          <!-- Chart.js Container -->
+          <div class="w-full h-64 lg:h-72 my-2 relative">
+            <canvas id="phaseSpaceChart"></canvas>
+          </div>
+
+          <!-- Explanation badge -->
+          <div class="text-[11px] font-mono text-gray-400 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800">
+            <div class="flex justify-between items-center mb-1">
+              <span class="text-cyan-300 font-semibold">Self-Test Diagnostic Metric:</span>
+              <span id="tripMarginMetric" class="text-emerald-400 font-bold">Trip Margin: +38.4%</span>
+            </div>
+            Optical darkening shifts the curve rightward: a higher duty cycle ($D$) is required to achieve high off-state resistance ($R$), signaling phototransistor base damage.
+          </div>
+        </div>
+      </div>
+
+      <!-- Secondary Telemetry Plots + Dynamic Control Console -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Telemetry Graphs (7 Cols) -->
+        <div class="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- CTR & Dark Current Plot -->
+          <div class="bg-gray-950/70 border border-gray-800 rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-gray-300 uppercase">Current Transfer Ratio (CTR) vs Time</span>
+              <span class="text-[11px] font-mono text-cyan-400" id="liveCtrVal">CTR: 78.4%</span>
+            </div>
+            <div class="h-36">
+              <canvas id="ctrHistoryChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Pull-Up Resistance Decay Plot -->
+          <div class="bg-gray-950/70 border border-gray-800 rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-gray-300 uppercase">Effective Pull-Up Resistance $R_{\text{eff}}$</span>
+              <span class="text-[11px] font-mono text-amber-400" id="liveResVal">R: 84.2 kΩ</span>
+            </div>
+            <div class="h-36">
+              <canvas id="resistanceHistoryChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Closed-Loop Control & Fault Injection Console (5 Cols) -->
+        <div class="lg:col-span-5 bg-gray-950/70 border border-gray-800 rounded-2xl p-4 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-gray-800/80">
+              <div class="flex items-center gap-2">
+                <i data-lucide="sliders" class="w-4 h-4 text-cyan-400"></i>
+                <h3 class="text-sm font-semibold tracking-wide text-white uppercase">Avionics Testbed Closed-Loop Controls</h3>
+              </div>
+              <span class="text-xs font-mono text-cyan-400">Autonomous Observer: ON</span>
+            </div>
+
+            <!-- Sliders -->
+            <div class="space-y-4 my-3 text-xs">
+              <!-- Slider 1: Jovian Radiation Flux -->
+              <div>
+                <div class="flex justify-between font-mono mb-1">
+                  <span class="text-gray-300">Jovian Electron/Proton Flux ($\Phi_{\text{rad}}$)</span>
+                  <span id="sliderRadVal" class="text-cyan-400 font-bold">1.0x (Orbital Nominal)</span>
+                </div>
+                <input id="sliderRadiation" type="range" min="0.1" max="5.0" step="0.1" value="1.0" class="w-full accent-cyan-400 cursor-pointer bg-gray-800 h-1.5 rounded-lg">
+                <div class="flex justify-between text-[10px] text-gray-500 font-mono mt-0.5">
+                  <span>En-Route Cruise</span>
+                  <span>Europa Orbit Insertion</span>
+                  <span>Inner Torus Storm</span>
+                </div>
+              </div>
+
+              <!-- Slider 2: Test Pulse Duty Cycle D -->
+              <div>
+                <div class="flex justify-between font-mono mb-1">
+                  <span class="text-gray-300">Self-Test Diagnostic Duty Cycle ($D$)</span>
+                  <span id="sliderDutyVal" class="text-cyan-400 font-bold">25.0 %</span>
+                </div>
+                <input id="sliderDuty" type="range" min="5" max="85" step="1" value="25" class="w-full accent-cyan-400 cursor-pointer bg-gray-800 h-1.5 rounded-lg">
+                <div class="flex justify-between text-[10px] text-gray-500 font-mono mt-0.5">
+                  <span>5% (Min Standby)</span>
+                  <span>45% (Nominal Target)</span>
+                  <span>85% (Overdrive Limit)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Buttons -->
+          <div class="pt-3 border-t border-gray-800 flex flex-wrap gap-2">
+            <button onclick="injectSolarParticleEvent()" class="flex-1 py-2 px-3 bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/60 rounded-xl text-amber-300 text-xs font-medium font-mono flex items-center justify-center gap-1.5 transition">
+              <i data-lucide="zap" class="w-3.5 h-3.5"></i> Inject Solar Flare (SPE)
+            </button>
+            <button onclick="triggerManualFailover()" class="flex-1 py-2 px-3 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-600/60 rounded-xl text-rose-300 text-xs font-medium font-mono flex items-center justify-center gap-1.5 transition">
+              <i data-lucide="toggle-right" class="w-3.5 h-3.5"></i> Manual Backup Swap
+            </button>
+            <button onclick="resetTelemetrySimulation()" class="py-2 px-3 bg-gray-800 hover:bg-gray-700 rounded-xl text-gray-300 text-xs font-mono transition">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================== -->
+    <!-- TAB 2: CORE PHYSICS & MATHEMATICAL MODEL                       -->
+    <!-- ============================================================== -->
+    <div id="viewPhysics" class="hidden space-y-6">
+      <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-6">
+        <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+          <i data-lucide="atom" class="w-6 h-6 text-cyan-400"></i>
+          Physical Principles of Radiation-Induced Optoelectronic Degradation
+        </h2>
+        <p class="text-sm text-gray-300 leading-relaxed max-w-4xl">
+          High-voltage battery isolation in deep-space power management units (PMUs) relies on optocouplers to provide galvanic breaks between 400V direct-current rails and low-voltage radiation-hardened FPGA logic boards. In Jovian radiation belts, trapped high-energy electrons (1–20 MeV) and protons induce severe lattice displacement and ionization damage across both optical silicone waveguides and bipolar silicon substrates.
+        </p>
+      </div>
+
+      <!-- 4 Core Physics Formula Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Card 1: Optical Dome Attenuation -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-6 h-6 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400 flex items-center justify-center font-mono text-xs font-bold">1</span>
+              <h3 class="text-base font-semibold text-white">Silicone Waveguide Darkening & Transmittance Loss</h3>
+            </div>
+            <p class="text-xs text-gray-400 mb-3">
+              Total Ionizing Dose (TID) creates color centers within transparent optical silicone dome matrices via radiolytic cross-linking and localized free-radical defect formation, drastically reducing optical transmission $\tau(D_{\gamma})$ at LED emission wavelengths ($\lambda \approx 850\text{ nm}$).
+            </p>
+            <div class="formula-box">
+              $$\tau(D_{\gamma}) = \tau_0 \cdot \exp\left( - \alpha_0 \left[ 1 + \left( \frac{D_{\gamma}}{D_{\text{crit}}} \right)^{\beta} \right] \cdot x_{\text{path}} \right)$$
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 font-mono mt-3 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800">
+            Where $\tau_0 \approx 0.94$, $D_{\gamma}$ is cumulative ionizing radiation dose in krad(Si), $\alpha_0$ is baseline attenuation coefficient, and $\beta$ is the polymer radiation sensitivity exponent ($0.65 \le \beta \le 0.88$).
+          </div>
+        </div>
+
+        <!-- Card 2: Phototransistor Base Dark-Current Leakage -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-6 h-6 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400 flex items-center justify-center font-mono text-xs font-bold">2</span>
+              <h3 class="text-base font-semibold text-white">Phototransistor Base Shockley-Read-Hall (SRH) Generation</h3>
+            </div>
+            <p class="text-xs text-gray-400 mb-3">
+              Displacement damage creates mid-gap energy states in the silicon phototransistor collector-base junction, generating thermally and field-assisted leakage carrier pairs ($I_{\text{dark}}$) in the dark state even when the input LED is unpowered.
+            </p>
+            <div class="formula-box">
+              $$I_{\text{dark}}(D_{\gamma}, T) = q \cdot n_i(T) \cdot \frac{W_{\text{dep}}}{\tau_g} + K_{\text{damage}} \cdot \Phi_{\text{eq}} \cdot A_{\text{junc}} \cdot \exp\left( -\frac{E_g - \Delta E_t}{k_B T} \right)$$
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 font-mono mt-3 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800">
+            Where $\tau_g$ is generation lifetime, $\Phi_{\text{eq}}$ is 1-MeV equivalent neutron/electron fluence, $A_{\text{junc}}$ is junction area, and $\Delta E_t \approx 0.55\text{ eV}$ represents radiation defect trap depth.
+          </div>
+        </div>
+
+        <!-- Card 3: Phase-Space Diagnostic Inversion -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-6 h-6 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400 flex items-center justify-center font-mono text-xs font-bold">3</span>
+              <h3 class="text-base font-semibold text-white">Startup Diagnostic Mapping: Duty Cycle ($D$) vs Resistance ($R$)</h3>
+            </div>
+            <p class="text-xs text-gray-400 mb-3">
+              During self-test mode, the digital PMU sweeps drive duty cycle ($D$) to measure effective channel pull-up resistance ($R$). Radiation degradation reduces the optical Current Transfer Ratio ($\text{CTR}$), causing rightward drift in required drive duty to pull the barrier out of leakage:
+            </p>
+            <div class="formula-box">
+              $$R(D) = \frac{V_{\text{bus}}}{I_{\text{dark}} + \left[ D \cdot I_F \cdot \text{CTR}_0 \cdot \tau(D_{\gamma}) \cdot \left(1 + \frac{\Delta(1/h_{FE})}{\Phi}\right)^{-1} \right]}$$
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 font-mono mt-3 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800">
+            When $D > D_{\text{crit}}$ is needed to sustain $R \ge 50\text{ k}\Omega$, the real-time software observer registers critical optical collapse and schedules immediate channel commutation.
+          </div>
+        </div>
+
+        <!-- Card 4: Autonomous State Observer & Hot-Swap Switch -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-6 h-6 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400 flex items-center justify-center font-mono text-xs font-bold">4</span>
+              <h3 class="text-base font-semibold text-white">Radiation Observer & Multi-Channel Commutation Logic</h3>
+            </div>
+            <p class="text-xs text-gray-400 mb-3">
+              To eliminate single-point mission failure without incurring continuous high-power draw, an autonomous observer Kalman Filter computes optical health metric $\mathcal{H}_c(t)$ and asserts hot failover within 4 microseconds:
+            </p>
+            <div class="formula-box">
+              $$\mathcal{H}_c(t) = \frac{\partial R}{\partial D}\Bigg|_{\text{nominal}} \cdot \left[ \frac{R_{\text{meas}}(D) - R_{\text{dark}}}{R_{\text{baseline}}(D)} \right] \le \Theta_{\text{trip}} \implies \text{TRIP\_SW}(CH_{\text{CAP}})$$
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 font-mono mt-3 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800">
+            Redundant isolation channels employ $\text{SiO}_2$ dual-capacitive isolation barriers, which are immune to optical yellowing and dark-current degradation under TID $> 300\text{ krad(Si)}$.
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Comparison Matrix: Optocoupler vs Digital Isolators -->
+      <div class="bg-gray-950/70 border border-gray-800 rounded-2xl p-5 overflow-x-auto">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider mb-3">Isolation Barrier Radiation Survivability Comparison</h3>
+        <table class="w-full text-left text-xs font-mono">
+          <thead>
+            <tr class="border-b border-gray-800 text-gray-400">
+              <th class="py-2 px-3">Isolation Technology</th>
+              <th class="py-2 px-3">Working Isolation Voltage</th>
+              <th class="py-2 px-3">TID Tolerance Limit</th>
+              <th class="py-2 px-3">Dark Leakage Mechanism</th>
+              <th class="py-2 px-3">Diagnostic Trackability</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-900 text-gray-300">
+            <tr>
+              <td class="py-2.5 px-3 font-semibold text-rose-400">Traditional Optocoupler (GaAs + Si BJT)</td>
+              <td class="py-2.5 px-3">2.5 kV - 5 kV</td>
+              <td class="py-2.5 px-3 text-rose-300">15 - 45 krad(Si)</td>
+              <td class="py-2.5 px-3">Dome opacity + SRH generation ($I_d > 200\text{ nA}$)</td>
+              <td class="py-2.5 px-3 text-cyan-400">High ($D$ vs $R$ drift curvature)</td>
+            </tr>
+            <tr>
+              <td class="py-2.5 px-3 font-semibold text-emerald-400">Differential $\text{SiO}_2$ Capacitive (Backup)</td>
+              <td class="py-2.5 px-3">5 kV - 10 kV</td>
+              <td class="py-2.5 px-3 text-emerald-300">&gt; 350 krad(Si)</td>
+              <td class="py-2.5 px-3">None (Dielectric charge traps only)</td>
+              <td class="py-2.5 px-3 text-gray-400">Direct bit-error rate (BER) monitoring</td>
+            </tr>
+            <tr>
+              <td class="py-2.5 px-3 font-semibold text-amber-400">Planar Micro-Transformer Magnetic (Tertiary)</td>
+              <td class="py-2.5 px-3">3 kV - 6 kV</td>
+              <td class="py-2.5 px-3 text-amber-300">&gt; 250 krad(Si)</td>
+              <td class="py-2.5 px-3">Ferrite permeability shift under heavy ions</td>
+              <td class="py-2.5 px-3 text-gray-400">Inductive loop phase-shift</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+
+    <!-- ============================================================== -->
+    <!-- TAB 3: $225,000 NASA SBIR/STTR PROPOSAL & HARDWARE TRANSITION -->
+    <!-- ============================================================== -->
+    <div id="viewProposal" class="hidden space-y-6">
+      
+      <!-- Solicitation Metadata Banner -->
+      <div class="bg-gray-900/60 border border-gray-800 rounded-2xl p-6 relative overflow-hidden">
+        <div class="absolute -right-8 -top-8 w-44 h-44 bg-cyan-500/10 rounded-full blur-2xl"></div>
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2 mb-2 font-mono text-xs">
+              <span class="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">NASA STTR 2026 Phase I</span>
+              <span class="text-gray-400">Solicitation Topic: Z2.01 Power & High-Voltage Avionics</span>
+            </div>
+            <h2 class="text-xl lg:text-2xl font-bold text-white">
+              Autonomous In-Flight Diagnostics for Radiation-Degraded Galvanic Barriers
+            </h2>
+            <p class="text-sm text-gray-300 mt-1 max-w-3xl">
+              Targeted for Deep Space Exploration (Europa Clipper follow-on, Uranus Orbiter, and Lunar Gateway Power & Propulsion Element).
+            </p>
+          </div>
+          <div class="text-right font-mono">
+            <div class="text-2xl font-bold text-cyan-400">$225,000</div>
+            <span class="text-xs text-gray-400">Phase I Period of Performance: 6 Months</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Partner Subcontract Allocation Card -->
+      <div class="bg-gray-950/80 border border-cyan-900/40 rounded-2xl p-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-800 pb-4">
+          <div>
+            <span class="text-xs font-mono uppercase tracking-widest text-cyan-400">Research Institution Partner (STTR 30% Requirement)</span>
+            <h3 class="text-lg font-bold text-white mt-1">University of Central Florida (UCF) - CATER Facilities</h3>
+            <p class="text-xs text-gray-300 mt-0.5">Center for Advanced Turbomachinery & Energy Research - Radiation & Thermal Chamber Lab</p>
+          </div>
+          <div class="font-mono text-right">
+            <span class="text-xs text-gray-400">Mandatory STTR Subcontract:</span>
+            <div class="text-xl font-bold text-emerald-400">$67,500 <span class="text-xs font-normal text-gray-400">(30.0%)</span></div>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 text-xs">
+          <div class="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
+            <span class="text-cyan-300 font-semibold block mb-1">Cobalt-60 Gamma Chamber Access</span>
+            <p class="text-gray-400">Total ionizing dose (TID) exposure testing up to 300 krad(Si) with calibrated in-situ dark-current and optical attenuation probing.</p>
+          </div>
+          <div class="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
+            <span class="text-cyan-300 font-semibold block mb-1">Cryogenic Vacuum Fixturing</span>
+            <p class="text-gray-400">Operation at Jovian deep-space thermal envelopes ($-120^\circ\text{C}$ to $+85^\circ\text{C}$) to isolate dark-current thermal generation components.</p>
+          </div>
+          <div class="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
+            <span class="text-cyan-300 font-semibold block mb-1">Faculty Co-PI Support</span>
+            <p class="text-gray-400">0.5 academic months summer salary for Principal Investigator plus 1 full-time Ph.D. graduate research assistant (GRA).</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6-Month Work Breakdown Schedule -->
+      <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-6">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+          <i data-lucide="calendar" class="w-4 h-4 text-cyan-400"></i>
+          Phase I Technical Work Plan & Milestones (Months 1 - 6)
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <!-- Month 1-2 -->
+          <div class="bg-gray-900/40 p-4 rounded-xl border border-gray-800/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center text-xs font-mono mb-2">
+                <span class="text-cyan-400 font-bold">M1 - M2</span>
+                <span class="text-gray-500">Milestone 1</span>
+              </div>
+              <h4 class="text-xs font-semibold text-white mb-1">Radiation Kinetic Modeling</h4>
+              <p class="text-[11px] text-gray-400 leading-relaxed">
+                Derivation of parametric coupling between silicone polymer transmittance degradation $\tau(D)$ and BJT dark-current generation $I_{\text{dark}}(\Phi)$.
+              </p>
+            </div>
+            <div class="text-[10px] font-mono text-cyan-300 mt-3 pt-2 border-t border-gray-800">Deliverable: MathCAD / SPICE Kinetic Models</div>
+          </div>
+
+          <!-- Month 3 -->
+          <div class="bg-gray-900/40 p-4 rounded-xl border border-gray-800/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center text-xs font-mono mb-2">
+                <span class="text-cyan-400 font-bold">M3</span>
+                <span class="text-gray-500">Milestone 2</span>
+              </div>
+              <h4 class="text-xs font-semibold text-white mb-1">Phase-Space Inversion Engine</h4>
+              <p class="text-[11px] text-gray-400 leading-relaxed">
+                Embedded C algorithmic observer synthesis mapping $(D, R)$ response during pulse self-test. Calibration of safe boundary corridor in FPGA memory.
+              </p>
+            </div>
+            <div class="text-[10px] font-mono text-cyan-300 mt-3 pt-2 border-t border-gray-800">Deliverable: Firmware VHDL & C-Observer Core</div>
+          </div>
+
+          <!-- Month 4-5 -->
+          <div class="bg-gray-900/40 p-4 rounded-xl border border-gray-800/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center text-xs font-mono mb-2">
+                <span class="text-cyan-400 font-bold">M4 - M5</span>
+                <span class="text-gray-500">Milestone 3</span>
+              </div>
+              <h4 class="text-xs font-semibold text-white mb-1">UCF Gamma Chamber Verification</h4>
+              <p class="text-[11px] text-gray-400 leading-relaxed">
+                Live irradiation of commercial aerospace optocouplers (4N49, OLH5600) up to 200 krad(Si). Real-time telemetry acquisition and observer error validation.
+              </p>
+            </div>
+            <div class="text-[10px] font-mono text-cyan-300 mt-3 pt-2 border-t border-gray-800">Deliverable: Empirically Validated Test Matrix</div>
+          </div>
+
+          <!-- Month 6 -->
+          <div class="bg-gray-900/40 p-4 rounded-xl border border-gray-800/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center text-xs font-mono mb-2">
+                <span class="text-cyan-400 font-bold">M6</span>
+                <span class="text-gray-500">Milestone 4</span>
+              </div>
+              <h4 class="text-xs font-semibold text-white mb-1">Phase II Transition Roadmap</h4>
+              <p class="text-[11px] text-gray-400 leading-relaxed">
+                Final technical reporting, TRL-5 certification package, and dual-channel radiation-hardened hybrid breadboard proposal for $1.15M Phase II grant.
+              </p>
+            </div>
+            <div class="text-[10px] font-mono text-cyan-300 mt-3 pt-2 border-t border-gray-800">Deliverable: Phase II Demonstration Proposal</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase II & Flight Transition Roadmap -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5">
+          <h4 class="text-xs font-bold text-cyan-400 uppercase tracking-widest font-mono mb-2">Phase II Prototype Execution ($1,150,000)</h4>
+          <p class="text-xs text-gray-300 leading-relaxed">
+            Phase II will manufacture flight-weight PMU line-replaceable units (LRUs) containing mixed-barrier arrays. The hardware switches instantaneously from primary optocouplers (used for zero EMI emission during cruise) to capacitive barriers when the $(D,R)$ tracker flags imminent optical exhaustion. Testing will conclude inside NASA Goddard Space Flight Center radiation simulators.
+          </p>
+        </div>
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5">
+          <h4 class="text-xs font-bold text-emerald-400 uppercase tracking-widest font-mono mb-2">Infusion Targets & Prime Contractor Integration</h4>
+          <p class="text-xs text-gray-300 leading-relaxed">
+            Direct insertion into the NASA Planetary Science Division Outer Planets Exploration fleet, commercial GEO communications satellites (SpaceX Starlink v3 / Blue Origin Blue Ring power modules), and military radiation-hardened satellite constellations needing 15+ year operational lifespans without manual servicing.
+          </p>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================== -->
+    <!-- TAB 4: COMMERCIAL & NATIONWIDE ARR BREAKDOWN                   -->
+    <!-- ============================================================== -->
+    <div id="viewARR" class="hidden space-y-6">
+      
+      <!-- Top Summary Header -->
+      <div class="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <div>
+          <span class="text-xs font-mono uppercase tracking-widest text-cyan-400">Dual-Use Commercial Market Transition</span>
+          <h2 class="text-xl lg:text-2xl font-bold text-white mt-1">
+            Civil High-Voltage & Extreme-Environment Isolation Software Market
+          </h2>
+          <p class="text-xs text-gray-300 mt-1 max-w-2xl">
+            OptoIsolator firmware and diagnostic IP license across medical radiotherapy, nuclear power generation, particle accelerators, aerospace EVs, and terrestrial high-voltage DC distribution.
+          </p>
+        </div>
+        <div class="bg-gray-950 p-4 rounded-xl border border-gray-800 font-mono text-right w-full lg:w-auto">
+          <span class="text-xs text-gray-400">Total Addressable Nationwide ARR:</span>
+          <div class="text-3xl font-extrabold text-cyan-400 tracking-tight">$245.8M</div>
+          <span class="text-[10px] text-emerald-400 font-semibold">10.5x SaaS / Deep-Tech Multiple $\approx$ $2.58B Enterprise Value</span>
+        </div>
+      </div>
+
+      <!-- Commercial ARR Distribution Table -->
+      <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 overflow-x-auto">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider mb-3">Addressable Civil Sector ARR Breakdown</h3>
+        <table class="w-full text-left text-xs font-mono">
+          <thead>
+            <tr class="border-b border-gray-800 text-gray-400">
+              <th class="py-2.5 px-3">Commercial Vertical</th>
+              <th class="py-2.5 px-3">Primary Target System</th>
+              <th class="py-2.5 px-3">SaaS / Firmware Unit Royalty</th>
+              <th class="py-2.5 px-3">Nationwide Asset Base</th>
+              <th class="py-2.5 px-3 text-right">Projected Mature ARR</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-900 text-gray-300">
+            <tr>
+              <td class="py-3 px-3 font-semibold text-cyan-400">Commercial Space & LEO Constellations</td>
+              <td class="py-3 px-3">Electric propulsion power controllers, Starlink/Kuiper buses</td>
+              <td class="py-3 px-3">$1,450 / satellite / yr</td>
+              <td class="py-3 px-3">38,000 active nodes</td>
+              <td class="py-3 px-3 text-right font-bold text-white">$55.1M</td>
+            </tr>
+            <tr>
+              <td class="py-3 px-3 font-semibold text-cyan-400">Civil Nuclear Energy & SMRs</td>
+              <td class="py-3 px-3">Containment valve actuators & high-radiation instrumentation</td>
+              <td class="py-3 px-3">$28,000 / reactor core / yr</td>
+              <td class="py-3 px-3">1,450 commercial units</td>
+              <td class="py-3 px-3 text-right font-bold text-white">$40.6M</td>
+            </tr>
+            <tr>
+              <td class="py-3 px-3 font-semibold text-cyan-400">Medical Radiotherapy & Proton Beams</td>
+              <td class="py-3 px-3">Linear accelerator (LINAC) multi-leaf collimator power</td>
+              <td class="py-3 px-3">$4,200 / treatment gantry / yr</td>
+              <td class="py-3 px-3">11,200 active gantries</td>
+              <td class="py-3 px-3 text-right font-bold text-white">$47.0M</td>
+            </tr>
+            <tr>
+              <td class="py-3 px-3 font-semibold text-cyan-400">High-Voltage EV DC Fast Chargers</td>
+              <td class="py-3 px-3">800V/1000V Silicon Carbide (SiC) gate driver monitoring</td>
+              <td class="py-3 px-3">$140 / charger stall / yr</td>
+              <td class="py-3 px-3">340,000 public stalls</td>
+              <td class="py-3 px-3 text-right font-bold text-white">$47.6M</td>
+            </tr>
+            <tr>
+              <td class="py-3 px-3 font-semibold text-cyan-400">Semiconductor Lithography & Synchrotrons</td>
+              <td class="py-3 px-3">High-vacuum EUV collector mirror positioning actuators</td>
+              <td class="py-3 px-3">$32,000 / EUV scanner / yr</td>
+              <td class="py-3 px-3">680 worldwide systems</td>
+              <td class="py-3 px-3 text-right font-bold text-white">$21.8M</td>
+            </tr>
+            <tr>
+              <td class="py-3 px-3 font-semibold text-cyan-400">Commercial Aviation & High-Altitude Cargo</td>
+              <td class="py-3 px-3">Avionics primary fly-by-wire 270V DC flight power busses</td>
+              <td class="py-3 px-3">$1,100 / airframe / yr</td>
+              <td class="py-3 px-3">30,600 transport aircraft</td>
+              <td class="py-3 px-3 text-right font-bold text-white">$33.7M</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="border-t border-gray-700 font-bold text-cyan-300">
+              <td class="py-3 px-3 uppercase" colspan="4">Consolidated Mature ARR Potential</td>
+              <td class="py-3 px-3 text-right text-base text-cyan-300">$245.8M</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Industry Deep-Dive Cards (Physics in 1 Sentence + Why Others Missed This) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        
+        <!-- Card 1: Medical Radiotherapy -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="cross" class="w-4 h-4 text-cyan-400"></i>
+              <h4 class="text-sm font-semibold text-white">Medical Proton & Flash Radiotherapy</h4>
+            </div>
+            <div class="text-xs text-gray-300 mb-2 font-mono">
+              <span class="text-cyan-400 font-semibold">Physics in 1 Sentence:</span> Secondary brehmsstrahlung X-ray scatter progressively darkens optocoupler domes in patient positioning tables, causing false gate triggers and emergency interlock trips.
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 bg-gray-900/60 p-3 rounded-xl border border-gray-800 mt-2">
+            <span class="text-amber-400 font-semibold block mb-0.5">Why Others Missed This:</span> Incumbent medical OEMs treat power barrier failures as unpredictable electronic component burnouts, replacing expensive board stacks instead of tracking duty-cycle drift during pre-treatment self-checks.
+          </div>
+        </div>
+
+        <!-- Card 2: Nuclear Power SMRs -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="radioactive" class="w-4 h-4 text-cyan-400"></i>
+              <h4 class="text-sm font-semibold text-white">Small Modular Nuclear Reactors (SMRs)</h4>
+            </div>
+            <div class="text-xs text-gray-300 mb-2 font-mono">
+              <span class="text-cyan-400 font-semibold">Physics in 1 Sentence:</span> Continuous gamma emissions inside automated containment zones cause insidious dark-current leakage across logic breaks, spoofing sensor readouts for coolant valve positions.
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 bg-gray-900/60 p-3 rounded-xl border border-gray-800 mt-2">
+            <span class="text-amber-400 font-semibold block mb-0.5">Why Others Missed This:</span> Operators rely on scheduled 24-month refueling outages to swap electronics, creating immense safety risks as next-generation SMRs are designed to run 8+ years without refueling stops.
+          </div>
+        </div>
+
+        <!-- Card 3: EV Fast Charging -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="zap" class="w-4 h-4 text-cyan-400"></i>
+              <h4 class="text-sm font-semibold text-white">800V-1000V EV Fast Charging Networks</h4>
+            </div>
+            <div class="text-xs text-gray-300 mb-2 font-mono">
+              <span class="text-cyan-400 font-semibold">Physics in 1 Sentence:</span> High ambient thermal cycling combined with high-frequency $dV/dt$ electrical stress causes thermal phototransistor baseline shift mimicking radiation displacement damage.
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 bg-gray-900/60 p-3 rounded-xl border border-gray-800 mt-2">
+            <span class="text-amber-400 font-semibold block mb-0.5">Why Others Missed This:</span> Chargers silently go out of service with generic "ground fault" error codes when the true failure is degraded optical couplers failing to maintain required pull-up margins.
+          </div>
+        </div>
+
+        <!-- Card 4: Semiconductor EUV Lithography -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="layers" class="w-4 h-4 text-cyan-400"></i>
+              <h4 class="text-sm font-semibold text-white">Semiconductor Extreme UV (EUV) Scanners</h4>
+            </div>
+            <div class="text-xs text-gray-300 mb-2 font-mono">
+              <span class="text-cyan-400 font-semibold">Physics in 1 Sentence:</span> Tin (Sn) plasma lasers generate intense soft X-rays that breach sub-chassis shielding, degrading actuator isolators inside the high-vacuum printing chamber.
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 bg-gray-900/60 p-3 rounded-xl border border-gray-800 mt-2">
+            <span class="text-amber-400 font-semibold block mb-0.5">Why Others Missed This:</span> Fab operators endure multimillion-dollar tool downtime because cleanroom maintenance protocols cannot distinguish optical isolator decay from motor failures.
+          </div>
+        </div>
+
+        <!-- Card 5: High-Altitude Commercial Aviation -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="plane" class="w-4 h-4 text-cyan-400"></i>
+              <h4 class="text-sm font-semibold text-white">High-Altitude Aviation (FL450+)</h4>
+            </div>
+            <div class="text-xs text-gray-300 mb-2 font-mono">
+              <span class="text-cyan-400 font-semibold">Physics in 1 Sentence:</span> Atmospheric cosmic-ray neutrons at 45,000 feet generate single-event displacement damage spikes in flight-control solid-state relays over 20,000 flight hours.
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 bg-gray-900/60 p-3 rounded-xl border border-gray-800 mt-2">
+            <span class="text-amber-400 font-semibold block mb-0.5">Why Others Missed This:</span> Airlines replace entire fly-by-wire computers after intermittent failure flags, unaware that a lightweight software startup check could preserve hardware by switching to backup capacitive channels.
+          </div>
+        </div>
+
+        <!-- Card 6: LEO Mega-Constellations -->
+        <div class="bg-gray-950/80 border border-gray-800 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="satellite" class="w-4 h-4 text-cyan-400"></i>
+              <h4 class="text-sm font-semibold text-white">Commercial LEO Constellations (Starlink / Kuiper)</h4>
+            </div>
+            <div class="text-xs text-gray-300 mb-2 font-mono">
+              <span class="text-cyan-400 font-semibold">Physics in 1 Sentence:</span> Passing through the South Atlantic Anomaly (SAA) infuses cumulative TID that degrades cheap commercial-off-the-shelf (COTS) optocouplers on electric Hall-thruster power converters.
+            </div>
+          </div>
+          <div class="text-[11px] text-gray-400 bg-gray-900/60 p-3 rounded-xl border border-gray-800 mt-2">
+            <span class="text-amber-400 font-semibold block mb-0.5">Why Others Missed This:</span> COTS builders either pay 100x markup for heavy rad-hard chips or accept a 5% premature on-orbit satellite mortality rate as "the cost of doing business."
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Commercial Call to Action Banner -->
+      <div class="bg-gradient-to-r from-gray-950 via-gray-900 to-cyan-950/50 border border-cyan-800/60 rounded-2xl p-6 text-center">
+        <h3 class="text-lg font-bold text-white mb-2">Collaborate on In-Flight Diagnostics & Redundant Isolation Systems</h3>
+        <p class="text-xs text-gray-300 max-w-xl mx-auto mb-4">
+          Looking to evaluate our firmware observers on your power electronics testbenches or integrate into next-generation NASA flight computers?
+        </p>
+        <a href="mailto:support@rfwavecode.com" class="inline-flex items-center gap-2 px-6 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-gray-950 font-bold rounded-xl text-xs font-mono transition shadow-lg shadow-cyan-500/20">
+          <i data-lucide="mail" class="w-4 h-4"></i> Contact Engineering Team: support@rfwavecode.com
+        </a>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-gray-800/80 bg-gray-950 px-6 py-4 mt-8 text-center text-xs text-gray-500 font-mono">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div>NASA SBIR/STTR Topic Z2.01: Deep-Space Avionics Radiation Dark-Current Tracker</div>
+      <div>Technical Lead Contact: <a href="mailto:support@rfwavecode.com" class="text-cyan-400 hover:underline">support@rfwavecode.com</a></div>
+    </div>
+  </footer>
+
+  <!-- ============================================================== -->
+  <!-- JAVASCRIPT LOGIC & ENGINE                                      -->
+  <!-- ============================================================== -->
+  <script>
+    // Tab Navigation Mapping
+    const tabMapping = {
+      'sim': { viewId: 'viewSim', btnId: 'tabBtnSim' },
+      'physics': { viewId: 'viewPhysics', btnId: 'tabBtnPhysics' },
+      'proposal': { viewId: 'viewProposal', btnId: 'tabBtnProposal' },
+      'arr': { viewId: 'viewARR', btnId: 'tabBtnARR' }
+    };
+
+    function switchTab(tabKey) {
+      Object.keys(tabMapping).forEach(key => {
+        const item = tabMapping[key];
+        const viewEl = document.getElementById(item.viewId);
+        const btnEl = document.getElementById(item.btnId);
+        
+        if (key === tabKey) {
+          viewEl.classList.remove('hidden');
+          btnEl.className = 'flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-cyan-400 bg-gray-800 shadow-sm transition';
+        } else {
+          viewEl.classList.add('hidden');
+          btnEl.className = 'flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+        }
+      });
+
+      // Rerender MathJax immediately
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise();
+      }
+
+      // If returning to simulation tab, adjust sizes
+      if (tabKey === 'sim') {
+        resizeCanvas();
+        if (phaseChart) phaseChart.resize();
+        if (ctrChart) ctrChart.resize();
+        if (resChart) resChart.resize();
+      }
+    }
+
+    // ==========================================
+    // Simulation Model State
+    // ==========================================
+    const simState = {
+      tidKrad: 142.4,        // Total Ionizing Dose in krad(Si)
+      radFluxMultiplier: 1.0, // Multiplier for Jovian environment
+      dutyCycle: 25.0,        // Self-test duty cycle (%)
+      tauDome: 0.912,        // Optical dome transmittance (0 to 1)
+      darkCurrentNA: 14.8,   // Phototransistor dark current in nA
+      ctr: 0.784,            // Current transfer ratio (fraction)
+      pullUpResistanceKOhm: 84.2, // Off-state pull-up resistance (kOhm)
+      activeChannel: 'OPTO', // 'OPTO' or 'CAPACITIVE'
+      tripMargin: 38.4,      // % safety margin before auto failover
+      isTripped: false,
+      tick: 0
+    };
+
+    // Chart instances
+    let phaseChart = null;
+    let ctrChart = null;
+    let resChart = null;
+
+    // Canvas elements & animation
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    let animationFrameId = null;
+
+    // Photons & Radiation particles arrays
+    const photons = [];
+    const radParticles = [];
+
+    function initParticles() {
+      photons.length = 0;
+      radParticles.length = 0;
+      for (let i = 0; i < 45; i++) {
+        photons.push({
+          x: 120 + Math.random() * 40,
+          y: 70 + Math.random() * 100,
+          vx: 3 + Math.random() * 2.5,
+          vy: (Math.random() - 0.5) * 1.2,
+          radius: 2.2 + Math.random() * 1.5,
+          alpha: Math.random()
+        });
+      }
+      for (let i = 0; i < 28; i++) {
+        radParticles.push({
+          x: Math.random() * 600,
+          y: -10 + Math.random() * 20,
+          vx: (Math.random() - 0.5) * 1.8,
+          vy: 2.5 + Math.random() * 4.0,
+          radius: 1.8 + Math.random() * 1.5,
+          color: Math.random() > 0.4 ? '#f59e0b' : '#ef4444'
+        });
+      }
+    }
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width || 600;
+      const h = rect.height || 330;
+      canvas.width = w * window.devicePixelRatio;
+      canvas.height = h * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    }
+
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+    });
+
+    // ==========================================
+    // Canvas Animation Loop
+    // ==========================================
+    function drawSimulation() {
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width || 600;
+      const height = rect.height || 330;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Background ambient space grid
+      ctx.strokeStyle = '#0d1525';
+      ctx.lineWidth = 1;
+      const gridSize = 28;
+      for (let x = 0; x < width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+
+      // Draw Physical Package Outline (SOIC-8 Ceramic Rad-Hard Header)
+      const pX = width * 0.14;
+      const pY = height * 0.18;
+      const pW = width * 0.72;
+      const pH = height * 0.64;
+
+      ctx.fillStyle = '#060a12';
+      ctx.strokeStyle = simState.isTripped ? '#e11d48' : '#1e293b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(pX, pY, pW, pH, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw Pins on left (HV Battery Side) and right (LV Logic Side)
+      const pinCount = 4;
+      const pinSpacing = pH / (pinCount + 1);
+      
+      for (let i = 1; i <= pinCount; i++) {
+        // Left Pins (HV Side - Orange Accents)
+        ctx.fillStyle = '#d97706';
+        ctx.fillRect(pX - 16, pY + i * pinSpacing - 5, 16, 10);
+        
+        // Right Pins (Logic Side - Cyan Accents)
+        ctx.fillStyle = simState.isTripped ? '#10b981' : '#06b6d4';
+        ctx.fillRect(pX + pW, pY + i * pinSpacing - 5, 16, 10);
+      }
+
+      // Pin Labels
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText("400V BATT (+)", pX + 8, pY + 1 * pinSpacing + 3);
+      ctx.fillText("GND_HV", pX + 8, pY + 4 * pinSpacing + 3);
+      ctx.fillText("VCC_LOGIC (3.3V)", pX + pW - 110, pY + 1 * pinSpacing + 3);
+      ctx.fillText("SIGNAL_OUT", pX + pW - 85, pY + 2 * pinSpacing + 3);
+
+      // Silicone Transparent Dome (Yellows as TID rises)
+      const domeX = pX + pW * 0.32;
+      const domeY = pY + pH * 0.22;
+      const domeW = pW * 0.36;
+      const domeH = pH * 0.56;
+
+      // Color shifts from clear cyan-white to dark amber-brown based on tauDome
+      const domeAlpha = 0.25;
+      const yellowIntensity = Math.min(255, Math.max(0, (1.0 - simState.tauDome) * 450));
+      ctx.fillStyle = `rgba(${15 + yellowIntensity}, ${40 + Math.max(0, 100 - yellowIntensity)}, 40, ${domeAlpha})`;
+      ctx.strokeStyle = `rgba(${120 + yellowIntensity}, 180, 200, 0.4)`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(domeX, domeY, domeW, domeH, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      // Dome Label
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '9px "JetBrains Mono", monospace';
+      ctx.fillText(`SILICONE DOME [$\tau$ = ${(simState.tauDome * 100).toFixed(1)}%]`, domeX + 6, domeY + 14);
+
+      // LED Emitter Die (Left inside dome)
+      const ledX = domeX - 25;
+      const ledY = domeY + domeH * 0.32;
+      const ledW = 20;
+      const ledH = domeH * 0.36;
+
+      ctx.fillStyle = '#1e293b';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(ledX, ledY, ledW, ledH, 4);
+      ctx.fill();
+      ctx.stroke();
+      
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = '8px "JetBrains Mono", monospace';
+      ctx.fillText("LED", ledX + 2, ledY + ledH / 2 + 3);
+
+      // Phototransistor Base Die (Right inside dome)
+      const bjtX = domeX + domeW + 5;
+      const bjtY = domeY + domeH * 0.28;
+      const bjtW = 24;
+      const bjtH = domeH * 0.44;
+
+      ctx.fillStyle = '#1e293b';
+      ctx.strokeStyle = simState.isTripped ? '#e11d48' : '#10b981';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(bjtX, bjtY, bjtW, bjtH, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = simState.isTripped ? '#f43f5e' : '#34d399';
+      ctx.font = '8px "JetBrains Mono", monospace';
+      ctx.fillText("BJT", bjtX + 4, bjtY + bjtH / 2 + 3);
+
+      // Secondary Redundant Channel (Capacitive Dual Barrier)
+      const capX = pX + pW * 0.25;
+      const capY = pY + pH * 0.82;
+      const capW = pW * 0.50;
+      const capH = pH * 0.12;
+
+      ctx.fillStyle = simState.isTripped ? 'rgba(16, 185, 129, 0.2)' : 'rgba(30, 41, 59, 0.4)';
+      ctx.strokeStyle = simState.isTripped ? '#10b981' : '#334155';
+      ctx.lineWidth = simState.isTripped ? 2 : 1;
+      ctx.beginPath();
+      ctx.roundRect(capX, capY, capW, capH, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = simState.isTripped ? '#34d399' : '#64748b';
+      ctx.font = '9px "JetBrains Mono", monospace';
+      ctx.fillText("BACKUP CH-B: DUAL SiO2 CAPACITIVE BARRIER [HOT STANDBY]", capX + 8, capY + capH * 0.7);
+
+      // Animate Light Photons (GaAs 850nm) from LED to BJT
+      ctx.fillStyle = '#06b6d4';
+      photons.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Bounce within dome
+        if (p.y < domeY + 5 || p.y > domeY + domeH - 5) p.vy *= -1;
+
+        // Reset if reached phototransistor
+        if (p.x > bjtX) {
+          p.x = ledX + ledW + 2;
+          p.y = ledY + Math.random() * ledH;
+        }
+
+        // Draw photon with intensity modified by dome transmittance
+        ctx.save();
+        ctx.globalAlpha = p.alpha * simState.tauDome;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // Animate Radiation Particles penetrating package
+      radParticles.forEach(rp => {
+        rp.y += rp.vy * simState.radFluxMultiplier;
+        rp.x += rp.vx;
+
+        if (rp.y > height + 10) {
+          rp.y = -10;
+          rp.x = Math.random() * width;
+        }
+
+        ctx.fillStyle = rp.color;
+        ctx.beginPath();
+        ctx.arc(rp.x, rp.y, rp.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Dark Current Leakage Vector Animation at BJT base
+      if (simState.darkCurrentNA > 5) {
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        const pulse = (Math.sin(simState.tick * 0.15) + 1) / 2;
+        ctx.beginPath();
+        ctx.moveTo(bjtX + bjtW / 2, bjtY + bjtH);
+        ctx.lineTo(bjtX + bjtW / 2, bjtY + bjtH + 18 + pulse * 10);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.font = '8px "JetBrains Mono", monospace';
+        ctx.fillText(`Id: ${simState.darkCurrentNA.toFixed(1)} nA`, bjtX - 10, bjtY + bjtH + 28);
+      }
+
+      animationFrameId = requestAnimationFrame(drawSimulation);
+    }
+
+    // ==========================================
+    // Telemetry Engine & Math Models
+    // ==========================================
+    function updatePhysicsEngine() {
+      simState.tick++;
+
+      // Cumulative Dose Accumulation
+      const doseRate = 0.045 * simState.radFluxMultiplier;
+      simState.tidKrad += doseRate;
+
+      // Optical Transmittance decay: tau = tau0 * exp(-alpha * (TID)^0.75)
+      const critDose = 180.0; // krad
+      simState.tauDome = Math.max(0.08, 0.94 * Math.exp(-0.0055 * Math.pow(simState.tidKrad, 0.82)));
+
+      // Dark Current increase: I_dark = Id0 + K * TID^1.4
+      simState.darkCurrentNA = 1.5 + 0.0014 * Math.pow(simState.tidKrad, 1.85);
+
+      // Current Transfer Ratio: CTR = CTR0 * tau * (1 / (1 + TID/120))
+      simState.ctr = Math.max(0.02, 0.95 * simState.tauDome * (1 / (1 + simState.tidKrad / 150)));
+
+      // Effective Resistance R(D): R = Vbus / (Idark + D * IF * CTR)
+      // Duty cycle is in % (e.g., 25% -> 0.25)
+      const dNorm = simState.dutyCycle / 100.0;
+      const vBus = 400.0; // V
+      const ifCurrent = 0.010; // 10 mA drive
+      const iTotal = (simState.darkCurrentNA * 1e-9) + (dNorm * ifCurrent * simState.ctr);
+      simState.pullUpResistanceKOhm = Math.min(250.0, Math.max(8.0, (vBus / (iTotal * 1000))));
+
+      // Safety Trip Margin Calculation
+      // If required duty cycle to stay above 40 kOhm surpasses 65%, trip threshold is crossed
+      const tripDutyThreshold = 60.0;
+      simState.tripMargin = Math.max(-20.0, ((tripDutyThreshold - simState.dutyCycle) / tripDutyThreshold) * 100);
+
+      // Autonomous Observer Trip Condition
+      if ((simState.ctr < 0.20 || simState.darkCurrentNA > 120 || simState.dutyCycle > 70) && !simState.isTripped) {
+        executeAutonomousFailover();
+      }
+
+      // Update HUD Values
+      updateHudDisplays();
+    }
+
+    function updateHudDisplays() {
+      document.getElementById('statTID').innerText = `${simState.tidKrad.toFixed(1)} krad(Si)`;
+      document.getElementById('statDome').innerText = `${(simState.tauDome * 100).toFixed(1)} %`;
+      document.getElementById('statDarkCurrent').innerText = `${simState.darkCurrentNA.toFixed(1)} nA`;
+      
+      const tripMarginEl = document.getElementById('tripMarginMetric');
+      if (tripMarginEl) {
+        tripMarginEl.innerText = `Trip Margin: ${simState.tripMargin >= 0 ? '+' : ''}${simState.tripMargin.toFixed(1)}%`;
+        tripMarginEl.className = simState.tripMargin > 15 ? 'text-emerald-400 font-bold' : (simState.tripMargin > 0 ? 'text-amber-400 font-bold' : 'text-rose-400 font-bold animate-pulse');
+      }
+
+      const busStatusEl = document.getElementById('telemetryBusStatus');
+      const activeChanEl = document.getElementById('statActiveChannel');
+      const chanSubtext = document.getElementById('statChannelSubtext');
+
+      if (simState.isTripped) {
+        busStatusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400 animate-ping"></span> FAILOVER: CH-B CAPACITIVE ACTIVE`;
+        busStatusEl.className = 'text-rose-400 font-semibold flex items-center justify-end gap-1';
+        activeChanEl.innerText = 'CH-B: CAPACITIVE (Backup)';
+        activeChanEl.className = 'text-xl font-bold text-emerald-400';
+        chanSubtext.innerText = 'Radiation Immature Channel';
+        chanSubtext.className = 'text-[10px] text-emerald-400 font-mono';
+      } else {
+        busStatusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> NOMINAL PRIMARY ISOLATION`;
+        busStatusEl.className = 'text-emerald-400 font-semibold flex items-center justify-end gap-1';
+        activeChanEl.innerText = 'CH-A: OPTO (Primary)';
+        activeChanEl.className = 'text-xl font-bold text-cyan-300';
+        chanSubtext.innerText = 'Normal High-V Isolation';
+        chanSubtext.className = 'text-[10px] text-emerald-500 font-mono';
+      }
+
+      document.getElementById('liveCtrVal').innerText = `CTR: ${(simState.ctr * 100).toFixed(1)}%`;
+      document.getElementById('liveResVal').innerText = `R: ${simState.pullUpResistanceKOhm.toFixed(1)} kΩ`;
+    }
+
+    function executeAutonomousFailover() {
+      simState.isTripped = true;
+      simState.activeChannel = 'CAPACITIVE';
+      document.getElementById('failoverOverlay').classList.remove('hidden');
+    }
+
+    function triggerManualFailover() {
+      if (simState.isTripped) {
+        simState.isTripped = false;
+        simState.activeChannel = 'OPTO';
+        document.getElementById('failoverOverlay').classList.add('hidden');
+      } else {
+        executeAutonomousFailover();
+      }
+    }
+
+    function injectSolarParticleEvent() {
+      simState.tidKrad += 25.0; // Sudden ionizing jump
+      simState.radFluxMultiplier = 4.5;
+      document.getElementById('sliderRadiation').value = 4.5;
+      document.getElementById('sliderRadVal').innerText = '4.5x (SPE Blast)';
+      setTimeout(() => {
+        simState.radFluxMultiplier = 1.2;
+        document.getElementById('sliderRadiation').value = 1.2;
+        document.getElementById('sliderRadVal').innerText = '1.2x (Orbital Nominal)';
+      }, 5000);
+    }
+
+    function resetTelemetrySimulation() {
+      simState.tidKrad = 12.0;
+      simState.radFluxMultiplier = 1.0;
+      simState.dutyCycle = 25.0;
+      simState.isTripped = false;
+      simState.activeChannel = 'OPTO';
+      document.getElementById('sliderRadiation').value = 1.0;
+      document.getElementById('sliderDuty').value = 25;
+      document.getElementById('sliderRadVal').innerText = '1.0x (Orbital Nominal)';
+      document.getElementById('sliderDutyVal').innerText = '25.0 %';
+      document.getElementById('failoverOverlay').classList.add('hidden');
+      initParticles();
+    }
+
+    // ==========================================
+    // Chart.js Diagnostic Visualizations
+    // ==========================================
+    function initCharts() {
+      // 1. Phase Space Chart: Duty Cycle (D) vs Pull-Up Resistance (R)
+      const ctxPhase = document.getElementById('phaseSpaceChart').getContext('2d');
+      
+      // Generate Nominal Corridor Curve
+      const nominalPoints = [];
+      const degradedPoints = [];
+      const hazardBoundary = [];
+      
+      for (let d = 5; d <= 85; d += 2) {
+        const dF = d / 100;
+        // Nominal R(D): healthy CTR ~ 0.9
+        const rNom = 400 / (1.5e-6 + dF * 0.010 * 0.9 * 1000);
+        nominalPoints.push({ x: d, y: Math.min(220, rNom) });
+        
+        // Degraded R(D): degraded CTR ~ 0.35 + higher dark current
+        const rDeg = 400 / (45e-6 + dF * 0.010 * 0.32 * 1000);
+        degradedPoints.push({ x: d, y: Math.min(220, rDeg) });
+
+        // Hazard threshold boundary line
+        hazardBoundary.push({ x: d, y: 35.0 });
+      }
+
+      phaseChart = new Chart(ctxPhase, {
+        type: 'scatter',
+        data: {
+          datasets: [
+            {
+              label: 'Live Startup (D, R) Trace',
+              data: [{ x: simState.dutyCycle, y: simState.pullUpResistanceKOhm }],
+              backgroundColor: '#38bdf8',
+              borderColor: '#0284c7',
+              pointRadius: 8,
+              pointHoverRadius: 10,
+              showLine: false,
+              order: 1
+            },
+            {
+              label: 'Pre-Flight Nominal Corridor',
+              data: nominalPoints,
+              borderColor: '#10b981',
+              borderWidth: 2,
+              borderDash: [4, 4],
+              showLine: true,
+              pointRadius: 0,
+              order: 3
+            },
+            {
+              label: 'Degraded Radiated Corridor',
+              data: degradedPoints,
+              borderColor: '#f59e0b',
+              borderWidth: 2,
+              borderDash: [3, 3],
+              showLine: true,
+              pointRadius: 0,
+              order: 4
+            },
+            {
+              label: 'Critical Failover Boundary (R < 35 kΩ)',
+              data: hazardBoundary,
+              borderColor: '#f43f5e',
+              borderWidth: 1.5,
+              showLine: true,
+              pointRadius: 0,
+              fill: 'start',
+              backgroundColor: 'rgba(244, 63, 94, 0.08)',
+              order: 5
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              type: 'linear',
+              position: 'bottom',
+              min: 0,
+              max: 90,
+              title: {
+                display: true,
+                text: 'Drive Duty Cycle D (%)',
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              },
+              grid: { color: '#1e293b' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } }
+            },
+            y: {
+              min: 0,
+              max: 220,
+              title: {
+                display: true,
+                text: 'Pull-Up Resistance R (kΩ)',
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              },
+              grid: { color: '#1e293b' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: '#cbd5e1',
+                font: { family: 'JetBrains Mono', size: 9 },
+                boxWidth: 12
+              }
+            }
+          }
+        }
+      });
+
+      // 2. CTR History Chart
+      const ctxCtr = document.getElementById('ctrHistoryChart').getContext('2d');
+      const timeLabels = Array.from({ length: 20 }, (_, i) => `-${(20 - i) * 2}s`);
+      const initialCtrData = Array.from({ length: 20 }, () => simState.ctr * 100);
+
+      ctrChart = new Chart(ctxCtr, {
+        type: 'line',
+        data: {
+          labels: timeLabels,
+          datasets: [{
+            label: 'CTR (%)',
+            data: initialCtrData,
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6, 182, 212, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: { display: false },
+            y: {
+              min: 0,
+              max: 100,
+              grid: { color: '#1e293b' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 8 } }
+            }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+
+      // 3. Resistance History Chart
+      const ctxRes = document.getElementById('resistanceHistoryChart').getContext('2d');
+      const initialResData = Array.from({ length: 20 }, () => simState.pullUpResistanceKOhm);
+
+      resChart = new Chart(ctxRes, {
+        type: 'line',
+        data: {
+          labels: timeLabels,
+          datasets: [{
+            label: 'R (kΩ)',
+            data: initialResData,
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: { display: false },
+            y: {
+              min: 0,
+              max: 200,
+              grid: { color: '#1e293b' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 8 } }
+            }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    // Update charts periodically (every 400ms to preserve performance)
+    function updateCharts() {
+      if (!phaseChart || !ctrChart || !resChart) return;
+
+      // Update Phase space head position
+      phaseChart.data.datasets[0].data = [{
+        x: simState.dutyCycle,
+        y: simState.pullUpResistanceKOhm
+      }];
+      phaseChart.update('none');
+
+      // Update time-series CTR
+      ctrChart.data.datasets[0].data.shift();
+      ctrChart.data.datasets[0].data.push(simState.ctr * 100);
+      ctrChart.update('none');
+
+      // Update time-series Resistance
+      resChart.data.datasets[0].data.shift();
+      resChart.data.datasets[0].data.push(simState.pullUpResistanceKOhm);
+      resChart.update('none');
+    }
+
+    // ==========================================
+    // Event Listeners & Sliders
+    // ==========================================
+    document.getElementById('sliderRadiation').addEventListener('input', (e) => {
+      simState.radFluxMultiplier = parseFloat(e.target.value);
+      document.getElementById('sliderRadVal').innerText = `${simState.radFluxMultiplier.toFixed(1)}x`;
+    });
+
+    document.getElementById('sliderDuty').addEventListener('input', (e) => {
+      simState.dutyCycle = parseFloat(e.target.value);
+      document.getElementById('sliderDutyVal').innerText = `${simState.dutyCycle.toFixed(1)} %`;
+    });
+
+    // ==========================================
+    // Initialization on Window Load
+    // ==========================================
+    window.onload = function () {
+      lucide.createIcons();
+      resizeCanvas();
+      initParticles();
+      initCharts();
+
+      // Start physics computation loop (25 Hz)
+      setInterval(updatePhysicsEngine, 40);
+
+      // Start chart update loop (2.5 Hz)
+      setInterval(updateCharts, 400);
+
+      // Start 60fps canvas drawing loop
+      drawSimulation();
+
+      // Ensure MathJax renders initial equations
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise();
+      }
+    };
+  </script>
+</body>
+</html>
